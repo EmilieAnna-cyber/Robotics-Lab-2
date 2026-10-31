@@ -87,3 +87,22 @@ print("\n=== GRIPPER POSITION EQUATIONS ===")
 print(f"X = {T_0_6_clean[0, 3]}")
 print(f"Y = {T_0_6_clean[1, 3]}")
 print(f"Z = {T_0_6_clean[2, 3]}")
+
+
+# additional VALUES
+
+L_CLUB = sp.symbols('L_CLUB')   # club length (m)
+
+# Club tip expressed in the flange frame: pure translation along tool Z
+T_6_tip = sp.Matrix([
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, L_CLUB],
+    [0, 0, 0, 1],
+])
+
+T_0_tip = sp.simplify(T_0_6 * T_6_tip)
+
+X_tip = T_0_tip[0, 3]
+Y_tip = T_0_tip[1, 3]
+Z_tip = T_0_tip[2, 3]
