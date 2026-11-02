@@ -11,12 +11,14 @@ from kinematics_2 import (
     theta1, theta2, theta3, theta4, theta5, theta6,
 )
 
-X_raw = T_0_6[0, 3]
-Y_raw = T_0_6[1, 3]
-Z_raw = T_0_6[2, 3]
+
+
+
+# =============================================================================
+# CONSTANTS & CONFIGURATION
+# =============================================================================
 
 # give numerical values to the robot: we need to measure so maybe change later 
-
 
 JOINT_BOUNDS = [
     (-np.pi,   np.pi),    # theta1 limits
@@ -31,6 +33,10 @@ JOINT_BOUNDS = [
 # 180 degrees/s => 180 * pi /180 rad/s = pi rad/s
 MAX_JOINT_VELOCITY = np.pi # rad/s
 
+# Maximum distance from the base to the wrist center (meters)
+# Calculation: Length of link 2 + length of link 3
+MAX_REACH = 0.2 + np.sqrt(0.2276**2 + 0.087**2) 
+
 # CLUB LENGTH: CHANGE LATER:
 
 L_CLUB_VAL = 0.1 #m
@@ -39,9 +45,13 @@ LINK_VALUES = {
     L_CLUB: L_CLUB_VAL,
 }
 
+# =============================================================================
+# FORWARD KINEMATICS — SYMBOLIC → NUMERIC
+# =============================================================================
 
-
-'''_________________________________________get a numerical function of the positions_________________________________________________________________'''
+X_raw = T_0_6[0, 3]
+Y_raw = T_0_6[1, 3]
+Z_raw = T_0_6[2, 3]
 
 # replace theoretical values with the real ones with .subs
 
@@ -49,9 +59,10 @@ X_raw = X_raw.subs(LINK_VALUES)
 Y_raw = Y_raw.subs(LINK_VALUES)
 Z_raw = Z_raw.subs(LINK_VALUES)
 
-# we are using both Sympy & NumPy: lambdify() allows to convert SymPy expressions into NumPy expression
+
 
 def joint_coords_from_fixed_frame(Matrix_list, joint_i):
+    ''' get the coordinates of a joint in the fixed frame (0) given the transformation matrices and the joint index'''
     T_0_i = k.T_i_j(Matrix_list,0,joint_i)
     # Extract raw position expressions
     X_raw = T_0_i[0, 3]
@@ -63,6 +74,7 @@ def joint_coords_from_fixed_frame(Matrix_list, joint_i):
 
 gripper_coord = joint_coords_from_fixed_frame(k.T_list, 6)
 
+# we are using both Sympy & NumPy: lambdify() allows to convert SymPy expressions into NumPy expression
 
 forward_x = sp.lambdify((theta1, theta2, theta3, theta4, theta5, theta6), X_raw, 'numpy')
 forward_y = sp.lambdify((theta1, theta2, theta3, theta4, theta5, theta6), Y_raw, 'numpy')
@@ -74,13 +86,25 @@ def get_ee_position(q):
         q: list of length 6 containing the angles of the robot (theta angles)
     RETURNS: 
         position the robot in (x,y,z) coordinates, in a Numpy Vector"""
-    return np.array([forward_x(*q), forward_y(*q), forward_z(*q)])
+    return np.array([forward_x(*q), forward_y(*q), forward_z(*q)])  
 
+# =============================================================================
+# ORIENTATION — LOOK-AT MATRIX
+# =============================================================================
 
 
 def get_matrix_look_at(x, y, z, target_point=np.array([0, 0, 0])):
     """
-    Oriente l'outil du robot pour qu'il "regarde" un point cible de l'espace.
+    From a position (x,y,z) and a target point, returns a 4x4 transformation matrix
+    that represents the orientation of the end-effector looking at the target point.
+    target_point is a 3D point in space that the end-effector should "look at".
+
+    PARAMETERS:
+    x: float, y: float, z: float: coordinates of the end-effector position
+    target_point: np.array of shape (3,), the point to look at
+
+    RETURNS:
+        T_target: np.array of shape (4,4), the transformation matrix
     """
     position = np.array([x, y, z])
     # Vecteur directionnel entre l'outil et sa cible
@@ -102,7 +126,9 @@ def get_matrix_look_at(x, y, z, target_point=np.array([0, 0, 0])):
     return T_target
 
 
-'''_________________________________________solve inverse kinematics_________________________________________________________________'''
+# =============================================================================
+# INVERSE KINEMATICS
+# =============================================================================
 
 def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
     """
@@ -199,14 +225,116 @@ def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
 
     return theta_angles
 
-def is_position_possible(target_pos):
+def position_is_possible(target_pos):
     try:
         solve_ik_with_bounds(target_pos)
         return True
     except ValueError:
         return False
+    
+# =============================================================================
+# GRIPPER / CLUB TIP POSITION
+# =============================================================================
 
-'''_________________________________________Positions for the swing trajectory (arbitrary ball position)_________________________________________________________________'''
+def get_gripper_pos(club_tip_pos):
+    """
+    Returns the [X, Y, Z] position of the CLUB TIP given the club tip position.
+    q: list or array of 6 joint angles (in radians)
+    """
+    T_0_tip = get_matrix_look_at(*club_tip_pos)
+
+    # write translation matrix along z-axis of the tool frame by L_CLUB_VAL
+    T_tip_6 = np.eye(4)
+    T_tip_6[2, 3] = - L_CLUB_VAL
+
+    # compute new transformation matrix after translation
+    # T_0_6 = T_0_tip @ T_tip_6 
+    T_0_6 = T_0_tip @ T_tip_6
+
+    gripper_pos = T_0_6[:3, 3]  # Extract the position of the gripper from the transformation matrix
+    return gripper_pos
+
+
+# =============================================================================
+# WAYPOINT CLAMPING
+# =============================================================================
+
+MAX_REACH_SAFETY = 0.95   # stay inside 95% of geometric reach
+RADIUS_STEPS     = np.linspace(1.0, 0.5, 26)   # 100% -> 50% of tip radius
+ANGLE_STEPS      = np.linspace(0.0, np.pi/2, 25)  # 0° -> 90° azimuth shift
+
+
+def _tip_is_feasible(P_tip):
+    """True if the flange corresponding to this tip passes IK + reach check."""
+    try:
+        flange = get_gripper_pos(P_tip)
+    except Exception:
+        return False
+    if np.linalg.norm(flange) > MAX_REACH * MAX_REACH_SAFETY:
+        return False
+    try:
+        solve_ik_with_bounds(flange)
+        return True
+    except ValueError:
+        return False
+
+
+def clamp_waypoint(target_pos):
+    """
+    Keep the waypoint as-is if reachable. Otherwise:
+      1) shrink its distance from the base (scale radius),
+      2) if that still fails, rotate its azimuth (change XY angle),
+      3) if all fails, raise (something is fundamentally wrong).
+    Returns the (possibly modified) tip position.
+    """
+    P_tip = np.asarray(target_pos, float)
+
+    if _tip_is_feasible(P_tip):
+        return P_tip
+
+    # --- 1. Radius shrink (keeps direction, shortens distance from base) ---
+    r = np.linalg.norm(P_tip)
+    if r > 1e-9: # avoid division by zero
+        u = P_tip / r # = unit vector pointing from the base to the tip 
+
+        for scale in RADIUS_STEPS: 
+            P_try = u * r * scale # scale down the radius
+            if _tip_is_feasible(P_try):
+                print(f"[clamp] {P_tip.round(3)} -> {P_try.round(3)}  (radius x{scale:.2f})")
+                return P_try
+
+
+    # Only reached if no radius scaling worked. 
+    # So the problem is not "too far" but something like the ball being at an awkward angle where joint limits bite.
+    # --- 2. Azimuth rotation (rotate around Z, keep radius and height) ---
+
+    rho = np.hypot(P_tip[0], P_tip[1])      # horizontal distance from Z-axis
+    phi = np.arctan2(P_tip[1], P_tip[0])    # current azimuth
+    z   = P_tip[2]                          # height unchanged
+
+    # Decompose P_tip into cylindrical coordinates (rho, phi, z)
+    for dphi in ANGLE_STEPS:
+        for sign in (+1, -1):
+            phi_new = phi + sign * dphi # rotate clockwise or counterclockwise
+            P_try = np.array([rho * np.cos(phi_new),
+                              rho * np.sin(phi_new),
+                              z])
+            if _tip_is_feasible(P_try):
+                print(f"[clamp] {P_tip.round(3)} -> {P_try.round(3)}  (azimuth {np.degrees(sign*dphi):+.0f}°)")
+                return P_try
+
+    raise ValueError(f"[clamp] waypoint {P_tip.round(3)} unreachable even after radius+angle mods")
+
+
+def clamped_waypoints(P_ball):
+    """Build the 4 waypoints, clamp each individually."""
+    tips = find_all_waypoints(P_ball)
+    return np.array([clamp_waypoint(P) for P in tips])
+
+
+# =============================================================================
+# WAYPOINT GENERATION
+# =============================================================================
 # --- Positions for the swing trajectory (all in metres, arbitrary ball) ---
 
 # NOTE: ADD CORNER CASES + CLAMPING
@@ -218,11 +346,16 @@ def swing_direction(alpha_deg):
 
 def find_P0(P_ball, L0=0.10, h0=0.03):
     """Ready/start: behind the ball along -d, raised by h0."""
-    return np.asarray(P_ball, float) - L0 * np.array([1.0, 0, 0]) + h0 * np.array([0, 0, 1.0])
+    P0 = np.asarray(P_ball, float) - L0 * np.array([1.0, 0, 0]) + h0 * np.array([0, 0, 1.0])
+    P0 = clamp_waypoint(P0)
+    return P0
+
 
 def find_P1(P_ball, Lb=0.10, angle = 90, h1 = 0.03):
     """Backswing: on the -d side of the ball."""
-    return find_P0(P_ball) - Lb * np.array([1.0, 0, 0]) + h1 * np.array([0, 0, 1.0])
+    P1 = find_P0(P_ball) - Lb * np.array([1.0, 0, 0]) + h1 * np.array([0, 0, 1.0])
+    P1 = clamp_waypoint(P1)
+    return P1
 
 def find_P2(P_ball):
     """Hit: exactly at the ball."""
@@ -230,7 +363,9 @@ def find_P2(P_ball):
 
 def find_P3(P_ball, Lf=0.15, angle = 30, h2 = 0.03 ):
     """Follow-through: on the +d side of the ball."""
-    return np.asarray(P_ball, float) + Lf * np.array([1.0, 0, 0]) + h2 * np.array([0, 0, 1.0])
+    P3 = np.asarray(P_ball, float) + Lf * np.array([1.0, 0, 0]) + h2 * np.array([0, 0, 1.0])
+    P3 = clamp_waypoint(P3)
+    return P3
 
 
 
@@ -266,42 +401,49 @@ def find_all_waypoints(P_ball, L0=0.10, h0=0.03,
 
 
 
+# =============================================================================
+# TIMING
+# ============================================================================
 
-
-'''def find_all_waypoints(P_ball, alpha_deg=0.0, L0=0.30, Lb=0.20, Lf=0.20, h0=0.05):
-    """Return the (4,3) array of club-tip waypoints and the swing direction."""
-    P_ball = np.asarray(P_ball, float)
-    d = swing_direction(alpha_deg)
-    P = np.vstack([find_P0(P_ball, d, L0, h0),
-                   find_P1(P_ball, d, Lb),
-                   find_P2(P_ball),
-                   find_P3(P_ball, d, Lf)])
-    return P, d'''
-
-'''_________________________________________find time points_________________________________________________________________'''
-
-def find_t1(P_ball, v_slow=np.pi/4):
+def find_t1(P_ball, v_slow=np.pi/8): # Slower backswing
     P0 = find_P0(P_ball)
     P1 = find_P1(P_ball)                       
     return np.linalg.norm(P1 - P0) / v_slow
 
-def find_t2(P_ball, v_max=3*np.pi/4):
+def find_t2(P_ball, v_max=np.pi/4): # Slower hit
     P1 = find_P1(P_ball)                       
     P2 = find_P2(P_ball)
     return find_t1(P_ball) + np.linalg.norm(P2 - P1) / v_max
 
-def find_t3(P_ball, v_max=3*np.pi/4):
+def find_t3(P_ball, v_max=np.pi/4): # Slower follow-through
     P2 = find_P2(P_ball)
     P3 = find_P3(P_ball)
     return find_t2(P_ball) + np.linalg.norm(P3 - P2) / v_max
 
-def find_time_steps(P_ball):
-    return np.array([0.0, find_t1(P_ball), find_t2(P_ball), find_t3(P_ball)])
+def find_time_steps_from_waypoints(tips, v_slow=np.pi/4, v_max=3*np.pi/4):
+    """Calculate time steps based on the physical distance between the CLAMPED waypoints.
+    PARAMETERS:
+        tips: np.array of shape (4,3) containing the 4 clamped waypoints (P0, P1, P2, P3)
+        v_slow: float, the speed for the first segment (P0 to P1)
+        v_max: float, float, the speed for the remaining segments (P1 to P2 and P2 to P3)
+    RETURNS:
+        np.array of shape (4,) containing the time steps [t0, t1, t2, t3]
+    """
+    d01 = np.linalg.norm(tips[1] - tips[0])
+    d12 = np.linalg.norm(tips[2] - tips[1])
+    d23 = np.linalg.norm(tips[3] - tips[2])
+    
+    t1 = d01 / v_slow
+    t2 = t1 + (d12 / v_max)
+    t3 = t2 + (d23 / v_max)
+    return np.array([0.0, t1, t2, t3])
 
 
 
 
-'''_________________________________________cubic spline_________________________________________________________________'''
+# =============================================================================
+# CUBIC SPLINE
+# =============================================================================
 
 
 def cs_x(P_ball, t): 
@@ -318,7 +460,7 @@ def t_fine(P_ball, step_number):
     return np.linspace(0.0, t3, step_number) 
     
 def matrix_of_path(P_ball, step_number=100):
-    t = find_time_steps(P_ball)
+    t = find_time_steps_from_waypoints(P_ball)
     tq = t_fine(P_ball, step_number)
 
     spline_x = cs_x(P_ball, t)                   
@@ -327,75 +469,69 @@ def matrix_of_path(P_ball, step_number=100):
 
     return np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
 
-'''_________________________________________waypoint clamping (optional)_________________________________________________________________'''
+# =============================================================================
+# Velocity Clamping
+# =============================================================================
 
-SAFE_BALL = np.array([0.30, 0.0, 0.20])
-SWING_DIR = np.array([1.0, 0.0, 0.0])
-
-
-def clamp_waypoint(P_tip):
+def clamp_velocity(tips_clamped, t_corners, max_vel=MAX_JOINT_VELOCITY):
     """
-    If P_tip is reachable, return it unchanged.
-    If not, move it step by step toward SAFE_BALL until IK works.
-    Returns the (possibly moved) tip position.
+    Checks the max joint velocity of the trajectory. 
+    If it exceeds max_vel, it scales the time steps to slow the trajectory down.
+    Returns the updated t_corners.
     """
-    for s in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
-        P_try = P_tip + s * (SAFE_BALL - P_tip)
+    # 1. Build temporary splines with the current time steps
+    spline_x = CubicSpline(t_corners, tips_clamped[:, 0], bc_type='clamped')
+    spline_y = CubicSpline(t_corners, tips_clamped[:, 1], bc_type='clamped')
+    spline_z = CubicSpline(t_corners, tips_clamped[:, 2], bc_type='clamped')
 
-        # try this tip with the current club, then a shorter club
-        for Lc in (L_CLUB_VAL, 0.05, 0.02):
-            flange = P_try - Lc * SWING_DIR
-            try:
-                solve_ik_with_bounds(flange)
-                if s > 0:
-                    print(f"[clamp] waypoint {P_tip.round(3)} moved {100*s:.0f}% -> {P_try.round(3)}")
-                return P_try
-            except ValueError:
-                continue
-
-    # nothing worked, return SAFE_BALL
-    print(f"[clamp] waypoint {P_tip.round(3)} unreachable, using SAFE_BALL")
-    return SAFE_BALL.copy()
-
-
-def clamped_waypoints(P_ball):
-    """Build 4 waypoints, then clamp each one individually."""
-    tips = find_all_waypoints(P_ball)
-    return np.array([clamp_waypoint(P) for P in tips])
-
-
-'''_________________________________________create many time samples_________________________________________________________________'''
-
-
-
-
-def tip_to_flange(P_tip, P_ball):
-    """Given the look-at-at-origin orientation, convert tip target to flange target."""
-    z_tool = -np.asarray(P_tip, float)
-    z_tool /= np.linalg.norm(z_tool)
-    return np.asarray(P_tip, float) - L_CLUB_VAL * z_tool
-
-
+    # 2. Sample the path and solve IK
+    tq = np.linspace(0.0, t_corners[-1], 100)
+    path_xyz = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
     
-'''_________________________________________example trajectory_________________________________________________________________'''
+    joint_traj = []
+    for target in path_xyz:
+        gripper_pos = get_gripper_pos(target)
+        joint_traj.append(solve_ik_with_bounds(gripper_pos))
+    joint_traj = np.array(joint_traj)
 
-ball_xyz = np.array([0.30, 0.05, 0.20])
+    # 3. Calculate velocities
+    dq = np.gradient(joint_traj, tq, axis=0)
+    vmax = np.max(np.abs(dq))
+
+    # 4. Scale time if necessary
+    if vmax > max_vel:
+        scale_factor = vmax / max_vel
+        print(f"[velocity clamp] Max velocity {vmax:.2f} rad/s exceeds limit {max_vel:.2f}. Slowing down by x{scale_factor:.2f}.")
+        t_corners = t_corners * scale_factor
+    else:
+        print(f"[velocity clamp] Max velocity {vmax:.2f} rad/s is within limit. No change.")
+        
+    return t_corners
+    
+# =============================================================================
+# EXAMPLE TRAJECTORY
+# ============================================================================
+
+ball_xyz = np.array([0.25, 0.0, 0.15])
 
 
 
-# Build the 4 corners, clamping any that are unreachable
+# Build the 4 waypoints, clamped them if necessary
+
+
 tips_clamped = clamped_waypoints(ball_xyz)
 print("Clamped waypoints:")
 for i, P in enumerate(tips_clamped):
     print(f"  P{i}: {P.round(3)}")
 
 # Build the spline from the CLAMPED tips
-t_corners = find_time_steps(ball_xyz)
+t_corners = find_time_steps_from_waypoints(tips_clamped)
+t_corners = clamp_velocity(tips_clamped, t_corners)
 spline_x = CubicSpline(t_corners, tips_clamped[:, 0], bc_type='clamped')
 spline_y = CubicSpline(t_corners, tips_clamped[:, 1], bc_type='clamped')
 spline_z = CubicSpline(t_corners, tips_clamped[:, 2], bc_type='clamped')
 
-tq = t_fine(ball_xyz, 100)
+tq = np.linspace(0.0, t_corners[-1], 100)
 path_xyz = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
 
 # solve inverse kinematics iteratively 
@@ -403,89 +539,85 @@ joint_trajectory = []
 
 
 for target in path_xyz:
-    flange_target = target - L_CLUB_VAL * np.array([1.0, 0, 0])
+    gripper_pos = get_gripper_pos(target)
     try:
-        q_sol = solve_ik_with_bounds(flange_target)
+        q_sol = solve_ik_with_bounds(gripper_pos)
     except ValueError as e:
         print(f"IK failed at {target}: {e}")
         raise
-    joint_trajectory.append(q_sol)
+    joint_trajectory.append(q_sol) 
 
-
+# array of shape (100, 6) containing joint angles over the trajectory 
 joint_trajectory = np.array(joint_trajectory)
 
 
 # Velocity check on the spline
-tq = t_fine(ball_xyz, step_number=100)
-dq = np.gradient(joint_trajectory, tq, axis=0)
+#tq = t_fine(ball_xyz, step_number=100) # time vector for the spline
+
+dq = np.gradient(joint_trajectory, tq, axis=0) # compute joint velocities at each time step of each joint
 vmax = np.max(np.abs(dq))
 print(f"Max joint velocity: {vmax:.2f} rad/s (limit {MAX_JOINT_VELOCITY})")
 print(f"Feasible: {vmax <= MAX_JOINT_VELOCITY}")
 
-# ---------------- 3D plot ----------------
-fig = plt.figure(figsize=(14, 5))
+# ---------------- combined plot ----------------
 
-# Left: 3D tip path
-ax3d = fig.add_subplot(1, 2, 1, projection='3d')
+# Velocity (one sample fewer than trajectory)
+dt = tq[1] - tq[0]
+joint_velocities = np.diff(joint_trajectory, axis=0) / dt
+t_vel = tq[:-1]
 
-# Tip path
-ax3d.plot(path_xyz[:,0], path_xyz[:,1], path_xyz[:,2],
-          'k-', lw=1.5, label='tip path')
+# Calculate the Cartesian velocity of the club tip
+tip_displacements = np.diff(path_xyz, axis=0)
+tip_velocities = tip_displacements / dt
+tip_speed = np.linalg.norm(tip_velocities, axis=1) # Magnitude of velocity vector
 
-# Corners
-colors = ['blue', 'orange', 'red', 'green']
-labels = ['P0', 'P1', 'P2 (hit)', 'P3']
-for i in range(4):
-    ax3d.scatter(tips_clamped[i,0], tips_clamped[i,1], tips_clamped[i,2],
-                 color=colors[i], s=80, label=labels[i])
 
-# Ball
-ax3d.scatter(ball_xyz[0], ball_xyz[1], ball_xyz[2],
-             color='gold', s=250, edgecolor='k', label='ball')
+# Create a 1x3 grid of plots
+fig = plt.figure(figsize=(20, 5))
 
-# Base frame origin
-ax3d.scatter(0, 0, 0, color='k', marker='^', s=100, label='robot base')
+# --- Left: 3D tip path ---
+ax1 = fig.add_subplot(1, 3, 1, projection='3d')
+ax1.plot(path_xyz[:,0], path_xyz[:,1], path_xyz[:,2], 'k-', lw=1.5, label='tip path')
+for i, P in enumerate(tips_clamped):
+    ax1.scatter(*P, s=80, label=f'P{i}')
+ax1.scatter(*ball_xyz, color='gold', s=250, edgecolor='k', label='ball')
+ax1.scatter(0, 0, 0, color='k', marker='^', s=100, label='base')
+ax1.set_xlabel('x [m]'); ax1.set_ylabel('y [m]'); ax1.set_zlabel('z [m]')
+ax1.set_title('3D tip path')
+ax1.legend(fontsize=8)
 
-# Workspace box (Lite 6 envelope: |x|<=0.44, |y|<=0.44, z in [-0.165, 0.684])
-x_lim = [-0.44, 0.44]
-y_lim = [-0.44, 0.44]
-z_lim = [-0.165, 0.684]
-
-for z in z_lim:
-    ax3d.plot([x_lim[0], x_lim[1], x_lim[1], x_lim[0], x_lim[0]],
-              [y_lim[0], y_lim[0], y_lim[1], y_lim[1], y_lim[0]],
-              [z, z, z, z, z], color='gray', lw=0.6, alpha=0.6)
-for x in x_lim:
-    for y in y_lim:
-        ax3d.plot([x, x], [y, y], [z_lim[0], z_lim[1]],
-                  color='gray', lw=0.6, alpha=0.6)
-
-ax3d.set_xlabel('x [m]')
-ax3d.set_ylabel('y [m]')
-ax3d.set_zlabel('z [m]')
-ax3d.set_title('3D tip path')
-ax3d.legend(fontsize=8, loc='upper left')
-
-# Force equal aspect ratio (otherwise the box looks stretched)
-P_all = np.vstack([path_xyz, tips_clamped, ball_xyz.reshape(1,3), np.zeros((1,3))])
-mid = P_all.mean(axis=0)
-span = 0.5 * np.max(P_all.max(axis=0) - P_all.min(axis=0))
-ax3d.set_xlim(mid[0] - span, mid[0] + span)
-ax3d.set_ylim(mid[1] - span, mid[1] + span)
-ax3d.set_zlim(mid[2] - span, mid[2] + span)
-
-# Right: joint angles (unchanged)
-ax2d = fig.add_subplot(1, 2, 2)
+# --- Middle: Joint velocities vs time ---
+ax2 = fig.add_subplot(1, 3, 2)
 for j in range(6):
-    ax2d.plot(tq, np.degrees(joint_trajectory[:,j]), label=f'θ{j+1}')
-ax2d.set_xlabel('t [s]')
-ax2d.set_ylabel('deg')
-ax2d.legend()
-ax2d.set_title('Joint trajectory')
+    ax2.plot(t_vel, np.abs(joint_velocities[:, j]), label=f'θ{j+1}')
+ax2.axhline(MAX_JOINT_VELOCITY, color='r', linestyle='--',
+            label=f'limit = {MAX_JOINT_VELOCITY:.2f} rad/s')
+
+# Add vertical lines for the 4 waypoints
+for i, t_c in enumerate(t_corners):
+    ax2.axvline(t_c, color='gray', linestyle=':', alpha=0.7)
+    ax2.text(t_c, ax2.get_ylim()[1]*0.9, f'P{i}', ha='center', color='black')
+
+ax2.set_xlabel('t [s]')
+ax2.set_ylabel('|dq/dt| [rad/s]')
+ax2.set_title('Joint velocities vs time')
+ax2.legend(fontsize=8)
+ax2.grid(True)
+
+# --- Right: Club tip Cartesian velocity vs time ---
+ax3 = fig.add_subplot(1, 3, 3)
+ax3.plot(t_vel, tip_speed, color='purple', lw=2, label='Tip speed')
+
+# Add vertical lines for the 4 waypoints
+for i, t_c in enumerate(t_corners):
+    ax3.axvline(t_c, color='gray', linestyle=':', alpha=0.7)
+    ax3.text(t_c, ax3.get_ylim()[1]*0.9, f'P{i}', ha='center', color='black')
+
+ax3.set_xlabel('t [s]')
+ax3.set_ylabel('Speed [m/s]')
+ax3.set_title('Club tip velocity vs time')
+ax3.legend(fontsize=8)
+ax3.grid(True)
 
 plt.tight_layout()
 plt.show()
-
-
-
-

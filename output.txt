@@ -1,0 +1,69 @@
+Starting kinematics calculation script...
+Computing individual transformation matrices...
+Calculating full T_0_6 matrix...
+Applying substitutions...
+
+=== FINAL FORWARD KINEMATICS MATRIX (T_0_6) ===
+⎡c₆⋅(-c₁⋅s₅⋅sin(θ₂ - θ₃) + c₅⋅(c₁⋅c₄⋅cos(θ₂ - θ₃) + s₁⋅s₄)) - s₆⋅(c₁⋅s₄⋅cos(θ₂ ↪
+⎢                                                                              ↪
+⎢c₆⋅(c₅⋅(-c₁⋅s₄ + c₄⋅s₁⋅cos(θ₂ - θ₃)) - s₁⋅s₅⋅sin(θ₂ - θ₃)) - s₆⋅(c₁⋅c₄ + s₁⋅s ↪
+⎢                                                                              ↪
+⎢              -c₆⋅(c₄⋅c₅⋅sin(θ₂ - θ₃) + s₅⋅cos(θ₂ - θ₃)) + s₄⋅s₆⋅sin(θ₂ - θ₃) ↪
+⎢                                                                              ↪
+⎣                                             0                                ↪
+
+↪  - θ₃) - c₄⋅s₁)  c₆⋅(-c₁⋅s₄⋅cos(θ₂ - θ₃) + c₄⋅s₁) - s₆⋅(-c₁⋅s₅⋅sin(θ₂ - θ₃)  ↪
+↪                                                                              ↪
+↪ ₄⋅cos(θ₂ - θ₃))  -c₆⋅(c₁⋅c₄ + s₁⋅s₄⋅cos(θ₂ - θ₃)) - s₆⋅(c₅⋅(-c₁⋅s₄ + c₄⋅s₁⋅c ↪
+↪                                                                              ↪
+↪                                 c₆⋅s₄⋅sin(θ₂ - θ₃) + s₆⋅(c₄⋅c₅⋅sin(θ₂ - θ₃)  ↪
+↪                                                                              ↪
+↪                                                                0             ↪
+
+↪ + c₅⋅(c₁⋅c₄⋅cos(θ₂ - θ₃) + s₁⋅s₄))  -c₁⋅c₅⋅sin(θ₂ - θ₃) - s₅⋅(c₁⋅c₄⋅cos(θ₂ - ↪
+↪                                                                              ↪
+↪ os(θ₂ - θ₃)) - s₁⋅s₅⋅sin(θ₂ - θ₃))  -c₅⋅s₁⋅sin(θ₂ - θ₃) - s₅⋅(-c₁⋅s₄ + c₄⋅s₁ ↪
+↪                                                                              ↪
+↪ + s₅⋅cos(θ₂ - θ₃))                           c₄⋅s₅⋅sin(θ₂ - θ₃) - c₅⋅cos(θ₂  ↪
+↪                                                                              ↪
+↪                                                               0              ↪
+
+↪  θ₃) + s₁⋅s₄)   -0.0615⋅c₁⋅c₄⋅s₅⋅cos(θ₂ - θ₃) - 0.0615⋅c₁⋅c₅⋅sin(θ₂ - θ₃) +  ↪
+↪                                                                              ↪
+↪ ⋅cos(θ₂ - θ₃))  0.0615⋅c₁⋅s₄⋅s₅ - 0.0615⋅c₄⋅s₁⋅s₅⋅cos(θ₂ - θ₃) - 0.0615⋅c₅⋅s ↪
+↪                                                                              ↪
+↪ - θ₃)                       0.2⋅c₂ + 0.0615⋅c₄⋅s₅⋅sin(θ₂ - θ₃) - 0.0615⋅c₅⋅c ↪
+↪                                                                              ↪
+↪                                                                              ↪
+
+↪ 0.2⋅c₁⋅s₂ - 0.2276⋅c₁⋅sin(θ₂ - θ₃) + 0.087⋅c₁⋅cos(θ₂ - θ₃) - 0.0615⋅s₁⋅s₄⋅s₅ ↪
+↪                                                                              ↪
+↪ ₁⋅sin(θ₂ - θ₃) + 0.2⋅s₁⋅s₂ - 0.2276⋅s₁⋅sin(θ₂ - θ₃) + 0.087⋅s₁⋅cos(θ₂ - θ₃)  ↪
+↪                                                                              ↪
+↪ os(θ₂ - θ₃) - 0.087⋅sin(θ₂ - θ₃) - 0.2276⋅cos(θ₂ - θ₃) + 0.2433              ↪
+↪                                                                              ↪
+↪        1                                                                     ↪
+
+↪ ⎤
+↪ ⎥
+↪ ⎥
+↪ ⎥
+↪ ⎥
+↪ ⎥
+↪ ⎦
+
+=== GRIPPER POSITION EQUATIONS ===
+X = -0.0615*c1*c4*s5*cos(theta2 - theta3) - 0.0615*c1*c5*sin(theta2 - theta3) + 0.2*c1*s2 - 0.2276*c1*sin(theta2 - theta3) + 0.087*c1*cos(theta2 - theta3) - 0.0615*s1*s4*s5
+Y = 0.0615*c1*s4*s5 - 0.0615*c4*s1*s5*cos(theta2 - theta3) - 0.0615*c5*s1*sin(theta2 - theta3) + 0.2*s1*s2 - 0.2276*s1*sin(theta2 - theta3) + 0.087*s1*cos(theta2 - theta3)
+Z = 0.2*c2 + 0.0615*c4*s5*sin(theta2 - theta3) - 0.0615*c5*cos(theta2 - theta3) - 0.087*sin(theta2 - theta3) - 0.2276*cos(theta2 - theta3) + 0.2433
+[clamp] [0.4  0.   0.18] -> [0.288 0.    0.13 ]  (radius x0.72)
+Clamped waypoints:
+  P0: [0.15 0.   0.18]
+  P1: [0.05 0.   0.21]
+  P2: [0.25 0.   0.15]
+  P3: [0.288 0.    0.13 ]
+[clamp] [0.4  0.   0.18] -> [0.288 0.    0.13 ]  (radius x0.72)
+[clamp] [0.4  0.   0.18] -> [0.288 0.    0.13 ]  (radius x0.72)
+[clamp] [0.4  0.   0.18] -> [0.288 0.    0.13 ]  (radius x0.72)
+Max joint velocity: 71.67 rad/s (limit 3.141592653589793)
+Feasible: False
