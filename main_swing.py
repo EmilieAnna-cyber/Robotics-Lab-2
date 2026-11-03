@@ -37,7 +37,7 @@ for target in path_xyz:
     gripper_pos = rm.get_gripper_pos(target)
     q_sol = rm.solve_ik_with_bounds(gripper_pos)
     joint_trajectory.append(q_sol) 
-joint_trajectory = np.array(joint_trajectory)
+joint_trajectory = np.unwrap(np.array(joint_trajectory), axis=0) #added unwrap to remove invalid velocity
 
 dq = np.gradient(joint_trajectory, tq, axis=0) 
 vmax = np.max(np.abs(dq))

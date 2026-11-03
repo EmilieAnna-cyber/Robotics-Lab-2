@@ -91,7 +91,7 @@ def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
     for i in range(6):
         min_lim, max_lim = bounds[i]
         angle = theta_angles[i]
-        if max_lim - min_lim >= 2 * np.pi:
+        if max_lim - min_lim >= 2 * np.pi: 
             angle = (angle + np.pi) % (2 * np.pi) - np.pi
             theta_angles[i] = angle
         if angle < min_lim or angle > max_lim:
@@ -187,11 +187,11 @@ def clamp_velocity(tips_clamped, t_corners, max_vel=MAX_JOINT_VELOCITY):
     tq = np.linspace(0.0, t_corners[-1], 100)
     path_xyz = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
     joint_traj = [solve_ik_with_bounds(get_gripper_pos(target)) for target in path_xyz]
-    joint_traj = np.array(joint_traj)
+    joint_traj = np.unwrap(np.array(joint_traj),axis=0) #added unwrap to remove the invalid velocity
     dq = np.gradient(joint_traj, tq, axis=0)
     vmax = np.max(np.abs(dq))
     if vmax > max_vel:
-        scale_factor = vmax / max_vel
+        scale_factor = (vmax / max_vel)*1.05 #added 5% safety buffer, so that the floating point doesn't hit exactly pi
         print(f"[velocity clamp] Slowing down by x{scale_factor:.2f}.")
         t_corners = t_corners * scale_factor
-    return t_cornersn't i just import the first file into it to be able to use the code and variables from the first 
+    return t_corners #t i just import the first file into it to be able to use the code and variables from the first 
