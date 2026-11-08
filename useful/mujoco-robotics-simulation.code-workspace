@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../../robotics Labs/mujoco-robotics-simulation"
+		},
+		{
+			"name": "n3e Led light circuit",
+			"path": "../../../Documents/PlatformIO/Projects/n3e Led light circuit"
+		},
+		{
+			"name": "Robotics-Lab-2",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}

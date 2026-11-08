@@ -3,8 +3,8 @@ from scipy.optimize import minimize
 from scipy.interpolate import CubicSpline
 import matplotlib.pyplot as plt
 import sympy as sp
-import kinematics_2 as k
-from kinematics_2 import (
+import useful.kinematics_2 as k
+from useful.kinematics_2 import (
     D1, A2, A3, D4, D6,
     T_0_6,
     X_tip, Y_tip, Z_tip, L_CLUB,
