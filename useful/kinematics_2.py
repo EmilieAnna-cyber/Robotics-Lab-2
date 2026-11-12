@@ -50,7 +50,7 @@ def transformation_matrix_list(dh_table_):
         T_matrixes.append(T)
     return T_matrixes
 
-print("Computing individual transformation matrices...")
+#print("Computing individual transformation matrices...")
 T_list = transformation_matrix_list(dh_table)
 
 # --- 3. FAST Matrix Chain Multiplication ---
@@ -76,17 +76,19 @@ substitutions = {
     sp.cos(theta6): c6, sp.sin(theta6): s6,
 }
 
-print("Applying substitutions...")
+
+#Prints for debugging purposes
+#print("Applying substitutions...")
 T_0_6_clean = T_0_6.subs(substitutions)
 
 # --- 5. Display Outputs ---
-print("\n=== FINAL FORWARD KINEMATICS MATRIX (T_0_6) ===")
-sp.pprint(T_0_6_clean, use_unicode=True)
+#print("\n=== FINAL FORWARD KINEMATICS MATRIX (T_0_6) ===")
+#sp.pprint(T_0_6_clean, use_unicode=True)
 
-print("\n=== GRIPPER POSITION EQUATIONS ===")
-print(f"X = {T_0_6_clean[0, 3]}")
-print(f"Y = {T_0_6_clean[1, 3]}")
-print(f"Z = {T_0_6_clean[2, 3]}")
+#print("\n=== GRIPPER POSITION EQUATIONS ===")
+#print(f"X = {T_0_6_clean[0, 3]}")
+#print(f"Y = {T_0_6_clean[1, 3]}")
+#print(f"Z = {T_0_6_clean[2, 3]}")
 
 
 # additional VALUES

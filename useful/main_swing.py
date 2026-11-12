@@ -3,13 +3,13 @@
 # main_swing.py
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import CubicHermiteSpline   # FIX: was CubicSpline - now we set the velocity at each waypoint
+from scipy.interpolate import CubicHermiteSpline   
 import useful.robot_math as rm
  
 # =============================================================================
 # 1. DEFINE THE BALL AND BUILD WAYPOINTS
 # =============================================================================
-ball_xyz = np.array([0.35, 0.2, 0.2])
+ball_xyz = np.array([0.25, 0, 0.15])
  
 tips_clamped = rm.find_all_waypoints(ball_xyz)
 print("Clamped waypoints:")
