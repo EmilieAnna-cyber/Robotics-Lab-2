@@ -50,7 +50,7 @@ def transformation_matrix_list(dh_table_):
         T_matrixes.append(T)
     return T_matrixes
 
-#print("Computing individual transformation matrices...")
+print("Computing individual transformation matrices...")
 T_list = transformation_matrix_list(dh_table)
 
 # --- 3. FAST Matrix Chain Multiplication ---
@@ -78,7 +78,7 @@ substitutions = {
 
 
 #Prints for debugging purposes
-#print("Applying substitutions...")
+print("Applying substitutions...")
 T_0_6_clean = T_0_6.subs(substitutions)
 
 # --- 5. Display Outputs ---

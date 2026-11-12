@@ -11,12 +11,14 @@ For every point in the trajectory:
 3-. Using the joint variables and forward kinematics
 """
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 from xarm.wrapper import XArmAPI
 
 import robot_math as rm
+
 
 
 # =============================================================================

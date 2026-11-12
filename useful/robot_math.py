@@ -162,6 +162,13 @@ def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
 # CLUB TIP & CLAMPING
 # =============================================================================
 def get_gripper_pos(club_tip_pos):
+    '''
+    goal: compute the flange position from the club tip position
+    PARAMS:
+        club_tip_pos: 3D position of the club tip in the robot's base frame
+    RETURNS:
+        gripper_pos: 3D position of the flange in the robot's base frame
+    '''
     T_0_tip = get_matrix_look_at(*club_tip_pos)
     T_tip_6 = np.eye(4)
     T_tip_6[2, 3] = - L_CLUB_VAL
