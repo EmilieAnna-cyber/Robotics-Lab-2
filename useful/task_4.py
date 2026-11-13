@@ -9,15 +9,23 @@ For every point in the trajectory:
 1-. Calculate the orientation of the arm based on the club position
 2_. Calculate the joint variables using IK xARm
 3-. Using the joint variables and forward kinematics
+4-. Compare the position and orientation obtained with the original ones
+
+The robot must be on and connected (same network, XARM_IP). The arm does NOT move:
+only the IK and FK of the controller are used.
+BALL_XYZ must be the same ball as in main_swing.py.
+
+Run from the folder Robotics-Lab-2:   python -m useful.task_4_
 """
 
-import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import CubicSpline
-from xarm.wrapper import XArmAPI
+from scipy.interpolate import CubicHermiteSpline  
 
-import robot_math as rm
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  
+import useful.robot_math as rm  
 
 
 
@@ -36,7 +44,14 @@ N_POINTS = 100
 # of the xArm
 
 def R_matrix_to_rpy(R):
-
+    '''
+    goal: convert a rotation matrix to the roll, pitch, yaw angles used by the xArm
+        R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+    PARAMS:
+        R: 3x3 rotation matrix
+    RETURNS:
+        array [roll, pitch, yaw] (radians)
+    '''
     sy = np.sqrt(R[0, 0] ** 2 + R[1, 0] ** 2)
 
     if sy > 1e-8:
@@ -52,7 +67,13 @@ def R_matrix_to_rpy(R):
 
 # Convert the angles return by the forward kinematics of the xArm to a rotation matrix to compare with the original rotation matrix
 def rpy_to_R_matrix(roll, pitch, yaw):
-    
+    '''
+    goal: convert the roll, pitch, yaw angles of the xArm back to a rotation matrix
+    PARAMS:
+        roll, pitch, yaw: angles (radians)
+    RETURNS:
+        R: 3x3 rotation matrix Rz(yaw) @ Ry(pitch) @ Rx(roll)
+    '''
     cr, sr = np.cos(roll), np.sin(roll)
     cp, sp = np.cos(pitch), np.sin(pitch)
     cy, sy = np.cos(yaw), np.sin(yaw)
@@ -74,8 +95,16 @@ def rpy_to_R_matrix(roll, pitch, yaw):
     ])
     return Rz @ Ry @ Rx
 
-#Delete the errors of orientation
+# Angle between the wanted orientation and the obtained one
 def orientation_error_degrees(R_target, R_actual):
+    '''
+    goal: angle of the rotation between the wanted orientation and the obtained one (0 = same orientation)
+    PARAMS:
+        R_target: 3x3 wanted rotation matrix
+        R_actual: 3x3 obtained rotation matrix
+    RETURNS:
+        angle (degrees) = arccos((trace(R_target^T R_actual) - 1) / 2)
+    '''
     
     R_delta = R_target.T @ R_actual
     cos_angle = (np.trace(R_delta) - 1.0) / 2.0
@@ -87,14 +116,23 @@ def orientation_error_degrees(R_target, R_actual):
 # Reproduces the calculations the waypoints and the interpolation used in task 2
 
 def generate_trajectory():
-   
+    '''
+   goal: Reproduces the calculations the waypoints and the interpolation used in task 2
+    PARAMS:
+         None
+    RETURNS:
+        waypoints: list of waypoints in the trajectory
+    '''
+
     waypoints = rm.find_all_waypoints(BALL_XYZ)
 
     t_corners = rm.find_time_steps_from_waypoints(waypoints)
+    t_corners = rm.clamp_velocity(waypoints, t_corners)   # FIX: same timing as main_swing
 
-    spline_x = CubicSpline(t_corners, waypoints[:, 0], bc_type="clamped")
-    spline_y = CubicSpline(t_corners, waypoints[:, 1], bc_type="clamped")
-    spline_z = CubicSpline(t_corners, waypoints[:, 2], bc_type="clamped")
+    vel = rm.find_waypoint_velocities(waypoints, t_corners)
+    spline_x = CubicHermiteSpline(t_corners, waypoints[:, 0], vel[:, 0])
+    spline_y = CubicHermiteSpline(t_corners, waypoints[:, 1], vel[:, 1])
+    spline_z = CubicHermiteSpline(t_corners, waypoints[:, 2], vel[:, 2])
 
     tq = np.linspace(0.0, t_corners[-1], N_POINTS)
     path_xyz = np.column_stack((
@@ -111,6 +149,15 @@ def generate_trajectory():
 # Convert a objetive poiint of the club to a pose of the flange of the xArm
 
 def xarm_pose(tip_target):
+    '''
+    goal: Convert a objetive poiint of the club to a pose of the flange of the xArm
+
+    PARAMS:
+        tip_target: point in the trajectory of the club tip 
+
+    RETURNS:
+        flange_pose: pose of the flange of the xArm corresponding to the tip_target
+    '''
     
     T_look_at = rm.get_matrix_look_at(*tip_target)
 
@@ -134,6 +181,21 @@ def xarm_pose(tip_target):
 #Calculate IK and Fk for every point in the trayectory using the SDK
 
 def ik_fk_for_point(arm, path_xyz):
+    '''
+    goal: Calculate IK and Fk for every point in the trayectory using the SDK
+
+    PARAMS:
+        arm: xArmAPI object (ex: arm = XArmAPI(XARM_IP, is_radian=True))
+        path_xyz: list of points in the trajectory
+
+    RETURNS:
+        target_poses: list of target poses for every point in the trajectory
+        joint_solutions: list of joint variables for every point in the trajectory
+        fk_poses: list of poses obtained after using IK and FK of the xArm for every point in the trajectory
+        successful_indices: list of indices of the points that were successfully calculated
+        failed_indices: list of indices of the points that were not successfully calculated
+    
+    '''
     
     target_poses = []
     joint_solutions = []
@@ -198,6 +260,19 @@ def ik_fk_for_point(arm, path_xyz):
 # obtain positiion and orientation after using IK and FK of the xArm
 
 def pose_flange_errors(target_poses, fk_poses):
+    '''
+    goal: Calculate the error between the position and orientation of a point in the original trajectory to the
+    obtain positiion and orientation after using IK and FK of the xArm
+    
+    PARAMS:
+        target_poses: list of target poses for every point in the trajectory
+        fk_poses: list of poses obtained after using IK and FK of the xArm for every point in the trajectory
+    
+    RETURNS:
+        position_errors_mm: list of position errors for every point in the trajectory
+        orientation_errors_deg: list of orientation errors for every point in the trajectory
+
+    '''
     
     position_errors_mm = np.linalg.norm(
         target_poses[:, :3] - fk_poses[:, :3],
@@ -221,6 +296,20 @@ def pose_flange_errors(target_poses, fk_poses):
 
 def plot_results(waypoints, path_xyz, joint_trajectory, successful_indices,
                  position_errors_mm, orientation_errors_deg):
+    '''
+    goal: Plot the number of points with the error calculated
+    
+    PARAMS:
+        waypoints: list of waypoints in the trajectory
+        path_xyz: list of points in the trajectory
+        joint_trajectory: list of joint variables for every point in the trajectory
+        successful_indices: list of indices of the points that were successfully calculated
+        position_errors_mm: list of position errors for every point in the trajectory
+        orientation_errors_deg: list of orientation errors for every point in the trajectory    
+
+    RETURNS:
+        None
+    '''
 
     fig = plt.figure(figsize=(14, 5))
 
@@ -247,7 +336,13 @@ def plot_results(waypoints, path_xyz, joint_trajectory, successful_indices,
 
 
 def main():
+    '''
+    goal: connect to the xArm, compute IK and FK of the robot for the 100 points of the swing,
+    print the position and orientation errors and plot them
+    '''
+    from xarm.wrapper import XArmAPI   
     arm = None
+    successful_indices = []            
 
     try:
         print(f"Conecting with xArm in {XARM_IP}...")

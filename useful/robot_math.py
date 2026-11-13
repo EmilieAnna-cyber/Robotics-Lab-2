@@ -1,5 +1,9 @@
-# TASK 4 & TASK 2
+# TASK 2
 # robot_math.py
+# toolbox of the swing: look-at matrix (orientation of the club), inverse kinematics, clamping of the waypoints,
+# waypoints P0..P3, timing and velocity clamping
+# this file is not run on its own: it is imported by main_swing.py and the other scripts
+# club length: L_CLUB_VAL (0 = the flange is the club tip)
 import numpy as np
 import sympy as sp
 import useful.kinematics_2 as k
@@ -33,6 +37,13 @@ forward_y = sp.lambdify((theta1, theta2, theta3, theta4, theta5, theta6), Y_raw,
 forward_z = sp.lambdify((theta1, theta2, theta3, theta4, theta5, theta6), Z_raw, 'numpy')
 
 def get_ee_position(q):
+    '''
+    goal: compute the flange position with our direct kinematics (task 1)
+    PARAMS:
+        q: list of the 6 joint angles (radians)
+    RETURNS:
+        3D position of the flange in the robot's base frame (m)
+    '''
     return np.array([forward_x(*q), forward_y(*q), forward_z(*q)])  
 
 # the club points AWAY from a swing pivot (the "golfer's shoulders"),
@@ -73,13 +84,15 @@ def get_matrix_look_at(x, y, z, target_point=None):
     T_target[:3, 0] = x_axis; T_target[:3, 1] = y_axis; T_target[:3, 2] = z_axis; T_target[:3, 3] = position
     return T_target
 
-def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
+def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS, tip_pos = None):
     '''
     Solves the inverse kinematics problem for the robot arm with joint angle bounds.
     
     PARAMS:
-    target_pos: 3D position of the end-effector (the tip of the club) in the robot's base frame.
+    target_pos: 3D position of the flange in the robot's base frame (= the club tip when L_CLUB_VAL = 0).
     bounds: list of tuples specifying the joint limits for each of the 6 joints. Each tuple is (min_angle, max_angle) in radians.
+    tip_pos: 3D position of the club tip. The orientation of the club is computed there (look-at matrix).
+             If None, target_pos is used (only correct when L_CLUB_VAL = 0).
 
     RETURNS:
     theta_angles: list of 6 joint angles (in radians) that achieve the desired end-effector position, while respecting the joint limits. 
@@ -90,7 +103,10 @@ def solve_ik_with_bounds(target_pos, bounds=JOINT_BOUNDS):
 
     # Compute the wrist center position
     x, y, z = target_pos[0], target_pos[1], target_pos[2]
-    matrix = get_matrix_look_at(x, y, z) # swing pivot is set in find_all_waypoints(), here at the end-effector position
+    # CLUB: the orientation of the club is computed at the club TIP, not at the flange
+    if tip_pos is None:
+        tip_pos = target_pos
+    matrix = get_matrix_look_at(*tip_pos)
     r13, r23, r33 = matrix[0, 2], matrix[1, 2], matrix[2, 2]
 
     # wrist center position => only depends on theta1, theta2, theta3 (the first three joints), not on the wrist orientation (theta4, theta5, theta6)
@@ -180,6 +196,14 @@ RADIUS_STEPS = np.linspace(1.0, 0.5, 26)
 ANGLE_STEPS = np.linspace(0.0, np.pi/2, 25)
 
 def _tip_is_feasible(P_tip):
+    '''
+    goal: check if the robot can put the club tip at P_tip
+    PARAMS:
+        P_tip: 3D position of the club tip
+    RETURNS:
+        True if the flange is inside 95% of the reach (measured from the shoulder)
+        and the IK finds a solution inside the joint limits, False otherwise
+    '''
     try:
         flange = get_gripper_pos(P_tip)
     except Exception:
@@ -187,12 +211,22 @@ def _tip_is_feasible(P_tip):
     if np.linalg.norm(flange - np.array([0, 0, D1])) > MAX_REACH * MAX_REACH_SAFETY:   # FIX: reach is from the shoulder
         return False
     try:
-        solve_ik_with_bounds(flange)
+        solve_ik_with_bounds(flange, tip_pos = P_tip)
         return True
     except ValueError:
         return False
 
 def clamp_waypoint(target_pos):
+    '''
+    goal: move a waypoint that the robot cannot reach to a reachable point close to it
+        stage 1: shrink it towards the base origin, p_new = s p with s = 1.00, 0.98, ..., 0.50
+        stage 2: rotate it around the vertical axis of the base, phi -> phi +- dphi with dphi = 0 ... 90 deg (height kept)
+    PARAMS:
+        target_pos: 3D position of the waypoint (club tip)
+    RETURNS:
+        the waypoint itself if it is reachable, otherwise the first reachable point found
+        Raises ValueError if no reachable point is found
+    '''
     P_tip = np.asarray(target_pos, float)
     if _tip_is_feasible(P_tip): return P_tip
     r = np.linalg.norm(P_tip)
@@ -219,23 +253,72 @@ IN_DIR = np.array([-1.0, 0, 0])       # towards the robot
 UP = np.array([0, 0, 1.0])
 
 def find_P0(P_ball, L0=0.05, h0=0.01):              # address, just behind the ball
+    '''
+    goal: address position, just behind the ball and slightly higher
+    PARAMS:
+        P_ball: 3D position of the ball
+        L0: distance behind the ball, along the swing direction (m)
+        h0: height above the ball (m)
+    RETURNS:
+        P0: 3D position of the club tip (clamped if needed)
+    '''
     P0 = np.asarray(P_ball, float) - L0 * SWING_DIR + h0 * UP
     return clamp_waypoint(P0)
 
 def find_P1(P_ball, Lb=0.15, in1=0.12, h1=0.10):    # top of the backswing
+    '''
+    goal: top of the backswing, behind the ball, closer to the robot and higher
+    PARAMS:
+        P_ball: 3D position of the ball
+        Lb: distance behind the ball, along the swing direction (m)
+        in1: distance towards the robot (m)
+        h1: height above the ball (m)
+    RETURNS:
+        P1: 3D position of the club tip (clamped if needed)
+    '''
     P1 = np.asarray(P_ball, float) - Lb * SWING_DIR + in1 * IN_DIR + h1 * UP
     return clamp_waypoint(P1)
 
 def find_P2(P_ball):                                 # impact
+    '''
+    goal: impact, the club tip is on the ball
+    PARAMS:
+        P_ball: 3D position of the ball
+    RETURNS:
+        P2: copy of the ball position (never clamped)
+    '''
     return np.asarray(P_ball, float).copy()
 
 def find_P3(P_ball, Lf=0.15, in3=0.12, h2=0.10):    # follow-through
+    '''
+    goal: follow-through, after the ball, closer to the robot and higher
+    PARAMS:
+        P_ball: 3D position of the ball
+        Lf: distance after the ball, along the swing direction (m)
+        in3: distance towards the robot (m)
+        h2: height above the ball (m)
+    RETURNS:
+        P3: 3D position of the club tip (clamped if needed)
+    '''
     P3 = np.asarray(P_ball, float) + Lf * SWING_DIR + in3 * IN_DIR + h2 * UP
     return clamp_waypoint(P3)
 
 def find_all_waypoints(P_ball, L0=0.05, h0=0.01, Lb=0.15, in1=0.12, h1=0.10, Lf=0.15, in3=0.12, h2=0.10,
-                       lean_deg=60, radius=0.15):
+                       lean_deg=60, radius=None):
+    '''
+    goal: set the swing pivot c and build the 4 waypoints of the swing
+        c = P_ball + radius * (sin(lean) * IN_DIR + cos(lean) * UP), saved in the global SWING_PIVOT
+    PARAMS:
+        P_ball: 3D position of the ball
+        L0, h0, Lb, in1, h1, Lf, in3, h2: offsets of the waypoints from the ball (m), see find_P0 ... find_P3
+        lean_deg: angle of the pivot from the vertical above the ball (degrees)
+        radius: distance ball - pivot (m). If None: max(0.15, L_CLUB_VAL + 0.05)
+    RETURNS:
+        4x3 array with the club tip positions P0, P1, P2, P3
+    '''
     global SWING_PIVOT # modify global variable used in get_matrix_look_at() and solve_ik_with_bounds()
+    if radius is None:   # CLUB: the pivot must be further from the tip than the club length
+        radius = max(0.15, L_CLUB_VAL + 0.05)
     L = np.radians(lean_deg)
     SWING_PIVOT = np.asarray(P_ball, float) + radius * (np.sin(L) * IN_DIR + np.cos(L) * UP)
     return np.vstack([
@@ -246,6 +329,15 @@ def find_all_waypoints(P_ball, L0=0.05, h0=0.01, Lb=0.15, in1=0.12, h1=0.10, Lf=
     ])
 
 def find_time_steps_from_waypoints(tips, v_slow=np.pi/4, v_max=3*np.pi/4):
+    '''
+    goal: time at each waypoint, from the distances between them (before the velocity clamp)
+    PARAMS:
+        tips: 4x3 array of the waypoints P0..P3
+        v_slow: speed of the backswing P0 -> P1 (m/s)
+        v_max: speed of the club tip at impact P2 (m/s)
+    RETURNS:
+        t_corners: array [0, t1, t2, t3] (s)
+    '''
     d01 = np.linalg.norm(tips[1] - tips[0])
     d12 = np.linalg.norm(tips[2] - tips[1])
     d23 = np.linalg.norm(tips[3] - tips[2])
@@ -255,6 +347,14 @@ def find_time_steps_from_waypoints(tips, v_slow=np.pi/4, v_max=3*np.pi/4):
     return np.array([0.0, t1, t2, t3])
 
 def find_waypoint_velocities(tips, t_corners):
+    '''
+    goal: velocity of the club tip at each waypoint: 0 at P0, P1, P3 and maximum at P2 (impact)
+    PARAMS:
+        tips: 4x3 array of the waypoints P0..P3
+        t_corners: time at each waypoint (s)
+    RETURNS:
+        vel: 4x3 array of velocities (m/s). At P2: v_imp = 2 d12 / (t2 - t1), in the direction P1 -> P3
+    '''
     # fastest at P2 (impact), moving along the swing direction P1 -> P3.
     vel = np.zeros_like(tips)
     direction = (tips[3] - tips[1]) / np.linalg.norm(tips[3] - tips[1])
@@ -263,6 +363,15 @@ def find_waypoint_velocities(tips, t_corners):
     return vel
 
 def clamp_velocity(tips_clamped, t_corners, max_vel=MAX_JOINT_VELOCITY):
+    '''
+    goal: slow the whole swing down if one joint goes faster than max_vel (same path, slower clock)
+    PARAMS:
+        tips_clamped: 4x3 array of the waypoints P0..P3
+        t_corners: time at each waypoint (s)
+        max_vel: joint speed limit (rad/s)
+    RETURNS:
+        t_corners: unchanged if the swing is slow enough, otherwise multiplied by alpha = 1.05 * max|dq| / max_vel
+    '''
     from scipy.interpolate import CubicHermiteSpline  
     vel = find_waypoint_velocities(tips_clamped, t_corners)
     spline_x = CubicHermiteSpline(t_corners, tips_clamped[:, 0], vel[:, 0])
@@ -270,7 +379,7 @@ def clamp_velocity(tips_clamped, t_corners, max_vel=MAX_JOINT_VELOCITY):
     spline_z = CubicHermiteSpline(t_corners, tips_clamped[:, 2], vel[:, 2])
     tq = np.linspace(0.0, t_corners[-1], 100)
     path_xyz = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
-    joint_traj = [solve_ik_with_bounds(get_gripper_pos(target)) for target in path_xyz]
+    joint_traj = [solve_ik_with_bounds(get_gripper_pos(target), tip_pos=target) for target in path_xyz]   # CLUB
     joint_traj = np.unwrap(np.array(joint_traj),axis=0) 
     dq = np.gradient(joint_traj, tq, axis=0)
     vmax = np.max(np.abs(dq))

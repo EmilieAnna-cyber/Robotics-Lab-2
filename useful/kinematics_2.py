@@ -1,3 +1,9 @@
+# TASK 1
+
+# kinematics_2.py
+# symbolic direct kinematics of the UFACTORY Lite 6 (standard DH convention)
+# gives T_0_6 (pose of the flange in the base frame) and X_tip, Y_tip, Z_tip (position of the club tip, club length L_CLUB)
+# this file is not run on its own: it is imported by robot_math.py (the simplification takes a few seconds)
 import os
 import sys
 import sympy as sp
@@ -26,6 +32,13 @@ dh_table = sp.Matrix([
 
 # --- 2. Transformation Matrix Function ---
 def make_transformation_matrix(dh_row):
+    '''
+    goal: build the homogeneous transformation matrix of one link from its row of the DH table
+    PARAMS:
+        dh_row: one row of the DH table [a, alpha, theta, d] (sympy Matrix 1x4)
+    RETURNS:
+        4x4 sympy matrix A_i = Rot_z(theta) Trans_z(d) Trans_x(a) Rot_x(alpha)
+    '''
     a = dh_row[0, 0]
     alpha = dh_row[0, 1]
     theta = dh_row[0, 2]
@@ -44,6 +57,13 @@ def make_transformation_matrix(dh_row):
     return sp.Matrix([row1, row2, row3, row4])
 
 def transformation_matrix_list(dh_table_):
+    '''
+    goal: build the transformation matrix of every link of the DH table
+    PARAMS:
+        dh_table_: DH table, one row per link [a, alpha, theta, d] (sympy Matrix)
+    RETURNS:
+        T_matrixes: list of the 4x4 link matrices [A_1, ..., A_n]
+    '''
     T_matrixes = []
     for i in range(dh_table_.rows):
         T = make_transformation_matrix(dh_table_[i, :])
@@ -55,6 +75,15 @@ T_list = transformation_matrix_list(dh_table)
 
 # --- 3. FAST Matrix Chain Multiplication ---
 def T_i_j(Matrix_list, i, j):
+    '''
+    goal: multiply the link matrices to get the transformation from frame i to frame j
+    PARAMS:
+        Matrix_list: list of the link matrices (from transformation_matrix_list)
+        i: first frame (0 = base)
+        j: last frame (6 = flange)
+    RETURNS:
+        T_total: 4x4 sympy matrix T_i_j = A_(i+1) * ... * A_j, simplified
+    '''
     T_total = Matrix_list[i]
     for k in range(i + 1, j):
         T_total = T_total * Matrix_list[k]

@@ -2,9 +2,8 @@
 
 # report_figures.py
 # makes all the figures of Task 2 in the report (same file names as in the latex)
-# run from inside useful/ :  python report_figures.py
+# run from inside useful/ :  python report_figures.py     or from Robotics-Lab-2 :  python -m useful.report_figures
 # the pictures are saved in a folder "figures" next to useful/
-# (mujoco_swing.png is not made here, it needs the 3D robot model -> screenshot from lite6_sim.py)
 import os
 import sys
 import numpy as np
@@ -36,6 +35,13 @@ impact = wp_index[2]
 
 # positions of the joints for drawing the arm (same DH table as kinematics_2.py)
 def dh_matrix(a, alpha, theta, d):
+    '''
+    goal: numeric transformation matrix of one link (same formula as make_transformation_matrix in kinematics_2.py)
+    PARAMS:
+        a, alpha, theta, d: DH parameters of the link (m, rad)
+    RETURNS:
+        4x4 numpy array
+    '''
     return np.array([
         [np.cos(theta), -np.sin(theta)*np.cos(alpha),  np.sin(theta)*np.sin(alpha), a*np.cos(theta)],
         [np.sin(theta),  np.cos(theta)*np.cos(alpha), -np.cos(theta)*np.sin(alpha), a*np.sin(theta)],
@@ -43,6 +49,14 @@ def dh_matrix(a, alpha, theta, d):
         [0,              0,                            0,                           1]])
 
 def arm_points(q):
+    '''
+    goal: positions of the joints of the arm, to draw it
+    PARAMS:
+        q: list of the 6 joint angles (radians)
+    RETURNS:
+        points: 6x3 array [base, shoulder, elbow, end of a3, wrist centre, flange] (m)
+        R: 3x3 orientation of the flange
+    '''
     T01 = dh_matrix(0,     -np.pi/2, q[0],            0.2433)
     T12 = dh_matrix(0.2,    np.pi,   q[1] - np.pi/2,  0)
     T23 = dh_matrix(0.087,  np.pi/2, q[2] - np.pi/2,  0)
@@ -70,6 +84,14 @@ fig, ax = plt.subplots(figsize=(8, 7.5))
 ax.set_xlim(0, 10); ax.set_ylim(0, 10); ax.axis('off')
 
 def box(x, y, width, title, subtitle, face, edge):
+    '''
+    goal: draw one rounded box of the pipeline figure
+    PARAMS:
+        x, y: centre of the box
+        width: width of the box
+        title, subtitle: text in the box (subtitle can be "")
+        face, edge: fill colour and border colour
+    '''
     ax.add_patch(FancyBboxPatch((x - width/2, y - 0.38), width, 0.76,
                                 boxstyle="round,pad=0.02,rounding_size=0.25", fc=face, ec=edge, lw=1.5))
     if subtitle == "":
@@ -79,6 +101,14 @@ def box(x, y, width, title, subtitle, face, edge):
         ax.text(x, y - 0.17, subtitle, ha='center', va='center', fontsize=9.5)
 
 def arrow(x0, y0, x1, y1, color='#444444', style='-'):
+    '''
+    goal: draw an arrow from (x0, y0) to (x1, y1) in the pipeline figure
+    PARAMS:
+        x0, y0: start of the arrow
+        x1, y1: end of the arrow (head)
+        color: colour of the arrow
+        style: line style ('-' full, '--' dashed)
+    '''
     ax.annotate('', xy=(x1, y1), xytext=(x0, y0),
                 arrowprops=dict(arrowstyle='-|>', color=color, lw=1.4, ls=style, mutation_scale=15))
 
@@ -476,7 +506,14 @@ ax1.legend(fontsize=10, loc='upper left'); ax1.grid(alpha=.3); ax1.set_xlim(-0.0
 
 # --- right: fastest joint with the nominal times and after the velocity clamp ---
 def fastest_joint(t_corners):
-    # same steps as main_swing: spline -> IK -> joint speeds
+    '''
+    goal: speed of the fastest joint along the swing, for given waypoint times (same steps as main_swing: spline -> IK -> joint speeds)
+    PARAMS:
+        t_corners: time at each waypoint (s)
+    RETURNS:
+        tq: 100 time samples (s)
+        max|dq/dt| over the 6 joints at each time sample (rad/s)
+    '''
     vel = rm.find_waypoint_velocities(waypoints, t_corners)
     spline_x = CubicHermiteSpline(t_corners, waypoints[:, 0], vel[:, 0])
     spline_y = CubicHermiteSpline(t_corners, waypoints[:, 1], vel[:, 1])
@@ -485,7 +522,7 @@ def fastest_joint(t_corners):
     path = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
     joints = []
     for target in path:
-        joints.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target)))
+        joints.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target), tip_pos=target))
     joints = np.unwrap(np.array(joints), axis=0)
     dq = np.gradient(joints, tq, axis=0)
     return tq, np.max(np.abs(dq), axis=1)   # fastest joint at each time

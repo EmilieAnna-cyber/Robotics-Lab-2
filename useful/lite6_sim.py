@@ -1,4 +1,9 @@
+# TASK 2
+
 # lite6_sim.py - play my joint_trajectory on the Lite 6 in MuJoCo
+# shows the official Lite 6 model, the planned club tip path (green), the ball (gold) and the waypoints P0..P3
+# the first run downloads the robot model to ~/.cache/lite6_model (needs internet once)
+# run from Robotics-Lab-2 :  python -m useful.lite6_sim      (on macOS: mjpython -m useful.lite6_sim)
 
 import os
 import sys
@@ -49,12 +54,27 @@ data = mujoco.MjData(model)
 
 
 def add_sphere(scn, pos, radius, rgba):
+    '''
+    goal: draw a sphere in the viewer (only drawn, no physics)
+    PARAMS:
+        scn: scene of the viewer (viewer.user_scn)
+        pos: 3D position of the centre (m)
+        radius: radius of the sphere (m)
+        rgba: colour [red, green, blue, transparency], each between 0 and 1
+    '''
     mujoco.mjv_initGeom(scn.geoms[scn.ngeom], mujoco.mjtGeom.mjGEOM_SPHERE, [radius, 0, 0],
                         pos, np.eye(3).flatten(), rgba)
     scn.ngeom += 1
 
 
 def add_line(scn, p0, p1, rgba):
+    '''
+    goal: draw a thin line (capsule) between two points in the viewer
+    PARAMS:
+        scn: scene of the viewer (viewer.user_scn)
+        p0, p1: 3D positions of the two ends (m)
+        rgba: colour [red, green, blue, transparency], each between 0 and 1
+    '''
     mujoco.mjv_initGeom(scn.geoms[scn.ngeom], mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
                         np.zeros(3), np.eye(3).flatten(), rgba)
     mujoco.mjv_connector(scn.geoms[scn.ngeom], mujoco.mjtGeom.mjGEOM_CAPSULE, 0.003, p0, p1)

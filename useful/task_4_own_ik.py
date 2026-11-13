@@ -11,12 +11,20 @@ Workflow:
 6. Compare target and recovered poses and plot both errors against point index.
 
 This version is fully offline: it does not connect to an xArm or require its SDK.
+It uses OUR IK (task 2) and OUR FK (task 1), so the errors must be ~0 (rounding only).
+ball_xyz must be the same ball as in main_swing.py.
+
+Run from the folder Robotics-Lab-2:   python -m useful.task_4_own_ik
+or from inside useful/:               python task_4_own_ik.py
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicHermiteSpline
-import robot_math as rm
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # FIX: so "import useful.xxx" works
+import useful.robot_math as rm  # FIX: robot_math imports useful.kinematics_2, so it must be imported as useful.robot_math
 
 
 # =============================================================================
@@ -39,9 +47,8 @@ for i, point in enumerate(tips_clamped):
 t_corners = rm.find_time_steps_from_waypoints(tips_clamped)
 t_corners = rm.clamp_velocity(tips_clamped, t_corners)
 
-# Use the original robot_math function if it exists.
-# The supplied robot_math.py does not define it, so a standard finite-
-# difference fallback is provided to keep the Main Swing spline executable.
+# Use the robot_math function (same velocities as main_swing: 0 at P0, P1, P3, max at P2).
+# The finite-difference fallback is only used with an old robot_math.py without this function.
 if hasattr(rm, "find_waypoint_velocities"):
     vel = rm.find_waypoint_velocities(tips_clamped, t_corners)
 else:
@@ -91,7 +98,13 @@ rotation_functions = [
 
 
 def get_ee_orientation(joint_angles):
-    """Return the 3x3 FK rotation matrix for six joint angles (radians)."""
+    '''
+    goal: orientation of the flange with our direct kinematics (task 1)
+    PARAMS:
+        joint_angles: list of the 6 joint angles (radians)
+    RETURNS:
+        3x3 rotation matrix of the flange in the base frame
+    '''
     return np.array([
         [rotation_functions[row][col](*joint_angles) for col in range(3)]
         for row in range(3)
@@ -99,10 +112,14 @@ def get_ee_orientation(joint_angles):
 
 
 def rotation_error_degrees(target_rotation, recovered_rotation):
-    """
-    Angular distance between two rotation matrices.
-    Uses the relative rotation angle: acos((trace(R_target.T R_fk)-1)/2).
-    """
+    '''
+    goal: angle of the rotation between the wanted orientation and the obtained one (0 = same orientation)
+    PARAMS:
+        target_rotation: 3x3 wanted rotation matrix
+        recovered_rotation: 3x3 rotation matrix obtained with the FK
+    RETURNS:
+        angle (degrees) = arccos((trace(R_target^T R_fk) - 1) / 2)
+    '''
     relative_rotation = target_rotation.T @ recovered_rotation
     cosine_angle = (np.trace(relative_rotation) - 1.0) / 2.0
     cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
@@ -129,11 +146,11 @@ for i, club_tip_target in enumerate(path_xyz):
 
         # Target orientation: same look_at orientation used internally by
         # robot_math.solve_ik_with_bounds.
-        target_rotation = rm.get_matrix_look_at(*flange_target)[:3, :3]
+        target_rotation = rm.get_matrix_look_at(*club_tip_target)[:3, :3]   # CLUB
 
         # Inverse kinematics: Cartesian flange target -> six joint angles.
         q_sol = np.asarray(
-            rm.solve_ik_with_bounds(flange_target),
+            rm.solve_ik_with_bounds(flange_target, tip_pos=club_tip_target),   # CLUB
             dtype=float
         )
 

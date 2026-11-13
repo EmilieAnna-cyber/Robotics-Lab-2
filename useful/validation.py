@@ -2,7 +2,7 @@
 
 # validation.py
 # recomputes every number written in the results of the report and checks the safety
-# run from inside useful/ :  python validation.py
+# run from inside useful/ :  python validation.py     or from Robotics-Lab-2 :  python -m useful.validation
 import os
 import sys
 import numpy as np
@@ -130,7 +130,7 @@ theta2 = np.arctan2(A*kx - B*kz, A*kz + B*kx)
 print("A = %.4f, B = %.4f, atan2(%.4f, %.4f) -> theta2 = %.1f deg" % (A, B, A*kx - B*kz, A*kz + B*kx, np.degrees(theta2)))
 
 # full IK from robot_math (also gives the wrist angles) and check with the FK of task 1
-q_impact = rm.solve_ik_with_bounds(rm.get_gripper_pos(ball))
+q_impact = rm.solve_ik_with_bounds(rm.get_gripper_pos(ball), tip_pos=ball)
 print("\nIK at impact (deg) =", np.degrees(q_impact).round(1))
 print("FK of these angles =", rm.get_ee_position(q_impact).round(5), " (should be the ball)")
 
@@ -148,7 +148,7 @@ tq_nominal = np.linspace(0, t_nominal[-1], 100)
 path_nominal = np.column_stack([spline_x(tq_nominal), spline_y(tq_nominal), spline_z(tq_nominal)])
 joints_nominal = []
 for target in path_nominal:
-    joints_nominal.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target)))
+    joints_nominal.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target), tip_pos=target))
 joints_nominal = np.unwrap(np.array(joints_nominal), axis=0)
 dq_nominal = np.abs(np.gradient(joints_nominal, tq_nominal, axis=0))
 
@@ -220,7 +220,7 @@ worst_error = 0
 for n in range(3000):
     tip = rng.uniform([-0.35, -0.35, 0.05], [0.35, 0.35, 0.5])   # random point in a box around the robot
     try:
-        q_test = rm.solve_ik_with_bounds(rm.get_gripper_pos(tip))
+        q_test = rm.solve_ik_with_bounds(rm.get_gripper_pos(tip), tip_pos=tip)
     except ValueError:
         continue   # not reachable -> skip it
     reachable += 1
@@ -281,7 +281,7 @@ for lean in [0, 15, 30, 45, 60, 75]:
     path = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
     joints = []
     for target in path:
-        joints.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target)))
+        joints.append(rm.solve_ik_with_bounds(rm.get_gripper_pos(target), tip_pos=target))
     joints = np.unwrap(np.array(joints), axis=0)
     slowdown = 1.05 * np.abs(np.gradient(joints, tq, axis=0)).max() / np.pi
     print(" %3d    %6.1f      x%5.1f     %5.1f s" % (lean, np.degrees(np.min(np.abs(joints[:, 4]))), slowdown, slowdown * t[-1]))
@@ -325,6 +325,13 @@ print("\n=== 12. SAFETY SUMMARY ===")
 dt = ms.tq[1] - ms.tq[0]
 
 def check(ok, text, value):
+    '''
+    goal: print one line of the safety summary
+    PARAMS:
+        ok: True if the check passes
+        text: what is checked
+        value: the value obtained (text)
+    '''
     if ok:
         print("PASS  %-42s %s" % (text, value))
     else:

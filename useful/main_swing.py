@@ -1,6 +1,10 @@
 # TASK 2
  
 # main_swing.py
+# builds the final golf swing: waypoints -> timing -> Hermite spline of the club tip -> IK -> joint trajectory
+# the variables made here (ball_xyz, tips_clamped, t_corners, tq, path_xyz, joint_trajectory, joint_velocities, tip_speed)
+# are imported by lite6_sim.py, validation.py, report_figures.py and trajectory_following(_mock).py
+# run from Robotics-Lab-2 :  python -m useful.main_swing   (close the plot window to finish)
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicHermiteSpline   
@@ -9,7 +13,7 @@ import useful.robot_math as rm
 # =============================================================================
 # 1. DEFINE THE BALL AND BUILD WAYPOINTS
 # =============================================================================
-ball_xyz = np.array([0.25, 0, 0.15])
+ball_xyz = np.array([0.25, 0.25, 0.25])
  
 tips_clamped = rm.find_all_waypoints(ball_xyz)
 print("Clamped waypoints:")
@@ -36,7 +40,7 @@ path_xyz = np.column_stack([spline_x(tq), spline_y(tq), spline_z(tq)])
 joint_trajectory = []
 for target in path_xyz:
     gripper_pos = rm.get_gripper_pos(target)
-    q_sol = rm.solve_ik_with_bounds(gripper_pos)
+    q_sol = rm.solve_ik_with_bounds(gripper_pos, tip_pos=target)   # CLUB
     joint_trajectory.append(q_sol) 
 joint_trajectory = np.unwrap(np.array(joint_trajectory), axis=0) #added unwrap to remove invalid velocity
  
@@ -92,67 +96,3 @@ ax3.set_title('Club tip velocity vs time'); ax3.legend(fontsize=8); ax3.grid(Tru
  
 plt.tight_layout()
 plt.show()
- 
-# =============================================================================
-# 6. ACCURACY VERIFICATION (Task 4)
-# =============================================================================
-# This requires the robot or the xArm Studio simulator to be running.
-# Uncomment the lines below when I install the xArm SDK 
- 
-'''
-from xarm.wrapper import XArmAPI
- 
-# Connect to robot (change IP to your robot/simulator)
-arm = XArmAPI('192.168.1.XXX', is_radian=True)
-arm.motion_enable(enable=True)
-arm.set_mode(0)
-arm.set_state(0)
- 
-recovered_positions = []
-recovered_orientations = []
- 
-for i, target in enumerate(path_xyz):
-    # 1. Convert the club-tip target to a flange target (using our helper)
-    flange_target = rm.get_gripper_pos(target)
- 
-    # 2. Use the BUILT-IN IK solver
-    # Note: we need a starting guess for the SDK, use the previous joint angles
-    code, joints = arm.get_inverse_kinematics(
-        [flange_target[0]*1000, flange_target[1]*1000, flange_target[2]*1000, 180, 0, 0], 
-        # position in mm, orientation roll=180 pitch=0 yaw=0
-        input_is_radian=False
-    )
- 
-    if code != 0:
-        print(f"IK failed at point {i}")
-        continue
- 
-    # 3. Use the BUILT-IN FK solver to verify
-    code, pose = arm.get_forward_kinematics(joints, input_is_radian=True)
-    
-    if code == 0:
-        # pose is [x, y, z, roll, pitch, yaw] — x,y,z in mm
-        recovered_positions.append(np.array(pose[:3]) / 1000.0)  # back to meters
-        recovered_orientations.append(np.array(pose[3:]))
- 
-recovered_positions = np.array(recovered_positions)
- 
-# 4. Compare target vs. recovered
-errors = np.linalg.norm(path_xyz - recovered_positions, axis=1) * 1000  # mm
-print(f"\n--- BUILT-IN IK/FK ACCURACY ---")
-print(f"Max position error:  {np.max(errors):.4f} mm")
-print(f"Mean position error: {np.mean(errors):.4f} mm")
- 
-# 5. Plot the error vs time
-plt.figure()
-plt.plot(tq[:len(errors)], errors, 'b-')
-plt.axhline(0, color='gray', linestyle='--')
-plt.xlabel('Time (s)')
-plt.ylabel('Position Error (mm)')
-plt.title('Accuracy of Built-in IK')
-plt.grid(True)
-plt.show()
- 
-arm.disconnect()
-'''
-

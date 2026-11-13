@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
+# TASK 3 (test without the robot)
+
+# trajectory_following_mock.py
+# same as trajectory_following.py, but with a fake robot (MockXArmAPI) that only prints the commands
+# used to check the velocity stream without the hardware (no xArm SDK needed)
+# run from Robotics-Lab-2 :  python -m useful.trajectory_following_mock   (close the plot window of main_swing to start)
+import os
+import sys
 import time
 import numpy as np
-from main_swing_0 import joint_trajectory, joint_velocities, tq
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # so "import useful.xxx" works
+from useful.main_swing import joint_trajectory, joint_velocities, tq   # FIX: main_swing_0 does not exist
 
 robot_ip = '192.168.1.158' #to be changed if different
 speed_scale = 0.5 #used to scale the speed at which robot operates(1 = velocity as caluclated)
 
 # Mock XArmAPI class for local testing without physical hardware
 class MockXArmAPI:
+    '''
+    goal: fake xArm with the same functions as XArmAPI that are used in follow_trajectory()
+    every function only prints what the real robot would do
+    '''
     def __init__(self, ip, is_radian=False):
         print(f"[Mock] Connecting to robot at {ip} (is_radian={is_radian})")
         
@@ -44,6 +58,11 @@ class MockXArmAPI:
             print(f"[Mock Stream] Speeds (deg/s): {formatted_speeds}", end="\r")
 
 def follow_trajectory():
+    '''
+    goal: same steps as follow_trajectory() in trajectory_following.py, sent to the fake robot
+    uses joint_trajectory, joint_velocities and tq from main_swing.py
+    speed_scale < 1 plays the swing slower (0.5 = half speed, twice as long)
+    '''
     arm = MockXArmAPI(robot_ip, is_radian=False)
     time.sleep(0.5)
 
